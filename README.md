@@ -10,15 +10,20 @@ notably the **verified vs. unverified signup** breakdown.
 | Metric | Type | Labels | Source |
 |---|---|---|---|
 | `authentik_event_count` | gauge | `action`, `window` | `/events/events/volume/` summed over 6 h buckets falling inside `window` |
-| `authentik_signups_verified` | gauge | `window` | `/core/users/?is_active=true&date_joined__gt=…&page_size=1` |
-| `authentik_signups_unverified` | gauge | `window` | `/core/users/?is_active=false&date_joined__gt=…&page_size=1` |
-| `authentik_signups_total` | gauge | `window` | sum of the two above |
+| `authentik_signups` | gauge | `window`, `state` | `/core/users/?is_active=…&date_joined__gt=…&page_size=1`. `state` is `verified` (is_active=true) or `unverified` (is_active=false). |
+| `authentik_users` | gauge | `state` | `/core/users/?is_active=…&page_size=1`. All-time totals, same `state` partitioning as signups. |
 | `authentik_exporter_up` | gauge | — | 1 if the last poll cycle was clean |
 | `authentik_exporter_scrape_duration_seconds` | gauge | `target` | seconds spent in the last poll |
 | `authentik_exporter_scrape_errors_total` | counter | `target` | poll failure count |
 | `authentik_exporter_last_success_timestamp_seconds` | gauge | `target` | Unix time of last clean poll |
 
-`target` is `events` or `signups`.
+`target` is `events`, `signups`, or `users`.
+
+Compute totals via `sum()`:
+```promql
+sum(authentik_users)                                # total users
+sum(authentik_signups) by (window)                  # signups per window
+```
 
 ### Caveat: 6 h bucket granularity
 
@@ -85,7 +90,7 @@ groups:
   - name: authentik-signups
     rules:
       - alert: AuthentikStuckUnverifiedSignups
-        expr: authentik_signups_unverified{window="24h"} > 5
+        expr: authentik_signups{window="24h",state="unverified"} > 5
         for: 1h
         annotations:
           summary: "Unverified signups are accumulating in the last 24h"

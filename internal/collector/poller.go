@@ -14,6 +14,7 @@ import (
 const (
 	targetEvents  = "events"
 	targetSignups = "signups"
+	targetUsers   = "users"
 )
 
 type Poller struct {
@@ -45,18 +46,13 @@ func (p *Poller) Run(ctx context.Context) {
 
 func (p *Poller) pollOnce(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Add(2)
-	var eventsOK, signupsOK bool
-	go func() {
-		defer wg.Done()
-		eventsOK = p.pollEvents(ctx)
-	}()
-	go func() {
-		defer wg.Done()
-		signupsOK = p.pollSignups(ctx)
-	}()
+	wg.Add(3)
+	var eventsOK, signupsOK, usersOK bool
+	go func() { defer wg.Done(); eventsOK = p.pollEvents(ctx) }()
+	go func() { defer wg.Done(); signupsOK = p.pollSignups(ctx) }()
+	go func() { defer wg.Done(); usersOK = p.pollUsers(ctx) }()
 	wg.Wait()
-	if eventsOK && signupsOK {
+	if eventsOK && signupsOK && usersOK {
 		p.metrics.ExporterUp.Set(1)
 	} else {
 		p.metrics.ExporterUp.Set(0)
@@ -136,14 +132,45 @@ func (p *Poller) pollSignups(ctx context.Context) bool {
 			continue
 		}
 
-		p.metrics.SignupsVerified.WithLabelValues(w.Label).Set(float64(verified))
-		p.metrics.SignupsUnverified.WithLabelValues(w.Label).Set(float64(unverified))
-		p.metrics.SignupsTotal.WithLabelValues(w.Label).Set(float64(verified + unverified))
+		p.metrics.Signups.WithLabelValues(w.Label, StateVerified).Set(float64(verified))
+		p.metrics.Signups.WithLabelValues(w.Label, StateUnverified).Set(float64(unverified))
 	}
 
 	p.metrics.ScrapeDuration.WithLabelValues(targetSignups).Set(time.Since(start).Seconds())
 	if allOK {
 		p.metrics.LastSuccessSeconds.WithLabelValues(targetSignups).Set(float64(time.Now().Unix()))
+	}
+	return allOK
+}
+
+// pollUsers queries the total verified and unverified user counts (no time
+// filter). Two cheap requests per poll using page_size=1 + pagination.count.
+func (p *Poller) pollUsers(ctx context.Context) bool {
+	start := time.Now()
+	allOK := true
+	trueVal, falseVal := true, false
+
+	verified, err := p.cli.UserCount(ctx, client.UserCountFilter{IsActive: &trueVal})
+	if err != nil {
+		p.log.Error("poll users (verified) failed", "err", err)
+		p.metrics.ScrapeErrorsTotal.WithLabelValues(targetUsers).Inc()
+		allOK = false
+	} else {
+		p.metrics.Users.WithLabelValues(StateVerified).Set(float64(verified))
+	}
+
+	unverified, err := p.cli.UserCount(ctx, client.UserCountFilter{IsActive: &falseVal})
+	if err != nil {
+		p.log.Error("poll users (unverified) failed", "err", err)
+		p.metrics.ScrapeErrorsTotal.WithLabelValues(targetUsers).Inc()
+		allOK = false
+	} else {
+		p.metrics.Users.WithLabelValues(StateUnverified).Set(float64(unverified))
+	}
+
+	p.metrics.ScrapeDuration.WithLabelValues(targetUsers).Set(time.Since(start).Seconds())
+	if allOK {
+		p.metrics.LastSuccessSeconds.WithLabelValues(targetUsers).Set(float64(time.Now().Unix()))
 	}
 	return allOK
 }

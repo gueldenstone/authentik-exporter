@@ -4,11 +4,16 @@ import "github.com/prometheus/client_golang/prometheus"
 
 const namespace = "authentik"
 
+// State label values used by the Signups and Users metrics.
+const (
+	StateVerified   = "verified"
+	StateUnverified = "unverified"
+)
+
 type Metrics struct {
 	EventCount         *prometheus.GaugeVec
-	SignupsVerified    *prometheus.GaugeVec
-	SignupsUnverified  *prometheus.GaugeVec
-	SignupsTotal       *prometheus.GaugeVec
+	Signups            *prometheus.GaugeVec
+	Users              *prometheus.GaugeVec
 	ExporterUp         prometheus.Gauge
 	ScrapeDuration     *prometheus.GaugeVec
 	ScrapeErrorsTotal  *prometheus.CounterVec
@@ -22,21 +27,16 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name:      "event_count",
 			Help:      "Number of events with the given action observed in the trailing window. Sourced from the /events/events/volume/ endpoint which buckets at 6h granularity; windows shorter than 6h represent the most recent 6h bucket.",
 		}, []string{"action", "window"}),
-		SignupsVerified: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Signups: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
-			Name:      "signups_verified",
-			Help:      "Users created in the trailing window with is_active=true (email verified).",
-		}, []string{"window"}),
-		SignupsUnverified: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name:      "signups",
+			Help:      "Users created in the trailing window, partitioned by verification state. state=verified means is_active=true (email confirmed); state=unverified means is_active=false. Sum over state for the total.",
+		}, []string{"window", "state"}),
+		Users: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace,
-			Name:      "signups_unverified",
-			Help:      "Users created in the trailing window with is_active=false (email not yet verified).",
-		}, []string{"window"}),
-		SignupsTotal: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: namespace,
-			Name:      "signups_total",
-			Help:      "Sum of verified and unverified signups in the trailing window.",
-		}, []string{"window"}),
+			Name:      "users",
+			Help:      "Total users in authentik, partitioned by verification state. state=verified means is_active=true; state=unverified means is_active=false. Sum over state for the grand total.",
+		}, []string{"state"}),
 		ExporterUp: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: "exporter",
@@ -64,9 +64,8 @@ func New(reg prometheus.Registerer) *Metrics {
 	}
 	reg.MustRegister(
 		m.EventCount,
-		m.SignupsVerified,
-		m.SignupsUnverified,
-		m.SignupsTotal,
+		m.Signups,
+		m.Users,
 		m.ExporterUp,
 		m.ScrapeDuration,
 		m.ScrapeErrorsTotal,
