@@ -15,6 +15,7 @@ const (
 	targetEvents  = "events"
 	targetSignups = "signups"
 	targetUsers   = "users"
+	targetGroups  = "groups"
 )
 
 type Poller struct {
@@ -46,13 +47,14 @@ func (p *Poller) Run(ctx context.Context) {
 
 func (p *Poller) pollOnce(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Add(3)
-	var eventsOK, signupsOK, usersOK bool
+	wg.Add(4)
+	var eventsOK, signupsOK, usersOK, groupsOK bool
 	go func() { defer wg.Done(); eventsOK = p.pollEvents(ctx) }()
 	go func() { defer wg.Done(); signupsOK = p.pollSignups(ctx) }()
 	go func() { defer wg.Done(); usersOK = p.pollUsers(ctx) }()
+	go func() { defer wg.Done(); groupsOK = p.pollGroups(ctx) }()
 	wg.Wait()
-	if eventsOK && signupsOK && usersOK {
+	if eventsOK && signupsOK && usersOK && groupsOK {
 		p.metrics.ExporterUp.Set(1)
 	} else {
 		p.metrics.ExporterUp.Set(0)
@@ -139,6 +141,45 @@ func (p *Poller) pollSignups(ctx context.Context) bool {
 	p.metrics.ScrapeDuration.WithLabelValues(targetSignups).Set(time.Since(start).Seconds())
 	if allOK {
 		p.metrics.LastSuccessSeconds.WithLabelValues(targetSignups).Set(float64(time.Now().Unix()))
+	}
+	return allOK
+}
+
+// pollGroups discovers all groups via /core/groups/, then queries the member
+// count for each via /core/users/?groups_by_name=…&page_size=1.
+//
+// GroupMembers is reset before populating so deleted groups stop emitting a
+// stale series. authentik_groups is always set, even on partial failure, so
+// dashboards can correlate the group total with the number of member series.
+func (p *Poller) pollGroups(ctx context.Context) bool {
+	start := time.Now()
+	allOK := true
+
+	groups, err := p.cli.ListGroups(ctx)
+	if err != nil {
+		p.log.Error("list groups failed", "err", err)
+		p.metrics.ScrapeErrorsTotal.WithLabelValues(targetGroups).Inc()
+		p.metrics.ScrapeDuration.WithLabelValues(targetGroups).Set(time.Since(start).Seconds())
+		return false
+	}
+
+	p.metrics.Groups.Set(float64(len(groups)))
+	p.metrics.GroupMembers.Reset()
+
+	for _, g := range groups {
+		count, err := p.cli.UserCount(ctx, client.UserCountFilter{GroupName: g.Name})
+		if err != nil {
+			p.log.Error("count group members failed", "group", g.Name, "err", err)
+			p.metrics.ScrapeErrorsTotal.WithLabelValues(targetGroups).Inc()
+			allOK = false
+			continue
+		}
+		p.metrics.GroupMembers.WithLabelValues(g.Name).Set(float64(count))
+	}
+
+	p.metrics.ScrapeDuration.WithLabelValues(targetGroups).Set(time.Since(start).Seconds())
+	if allOK {
+		p.metrics.LastSuccessSeconds.WithLabelValues(targetGroups).Set(float64(time.Now().Unix()))
 	}
 	return allOK
 }

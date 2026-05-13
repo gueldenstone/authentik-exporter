@@ -12,12 +12,14 @@ notably the **verified vs. unverified signup** breakdown.
 | `authentik_event_count` | gauge | `action`, `window` | `/events/events/volume/` summed over 6 h buckets falling inside `window` |
 | `authentik_signups` | gauge | `window`, `state` | `/core/users/?is_active=…&date_joined__gt=…&page_size=1`. `state` is `verified` (is_active=true) or `unverified` (is_active=false). |
 | `authentik_users` | gauge | `state` | `/core/users/?is_active=…&page_size=1`. All-time totals, same `state` partitioning as signups. |
+| `authentik_groups` | gauge | — | Total number of groups (from `/core/groups/`). |
+| `authentik_group_members` | gauge | `group` | Member count per group (one series per group). Auto-discovered each poll; deleted groups stop emitting series. A user can belong to multiple groups, so summing this metric is **not** equal to the user total. |
 | `authentik_exporter_up` | gauge | — | 1 if the last poll cycle was clean |
 | `authentik_exporter_scrape_duration_seconds` | gauge | `target` | seconds spent in the last poll |
 | `authentik_exporter_scrape_errors_total` | counter | `target` | poll failure count |
 | `authentik_exporter_last_success_timestamp_seconds` | gauge | `target` | Unix time of last clean poll |
 
-`target` is `events`, `signups`, or `users`.
+`target` is `events`, `signups`, `users`, or `groups`.
 
 Compute totals via `sum()`:
 ```promql

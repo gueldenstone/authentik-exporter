@@ -10,6 +10,7 @@ import (
 type UserCountFilter struct {
 	IsActive     *bool
 	DateJoinedGt *time.Time
+	GroupName    string // exact group name; if empty, no group filter
 }
 
 // UserCount returns the total number of users matching the filter, using
@@ -26,6 +27,9 @@ func (c *Client) UserCount(ctx context.Context, f UserCountFilter) (int, error) 
 	}
 	if f.DateJoinedGt != nil {
 		req = req.DateJoinedGt(*f.DateJoinedGt)
+	}
+	if f.GroupName != "" {
+		req = req.GroupsByName([]string{f.GroupName})
 	}
 	res, _, err := req.Execute()
 	if err != nil {

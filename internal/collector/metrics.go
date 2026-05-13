@@ -14,6 +14,8 @@ type Metrics struct {
 	EventCount         *prometheus.GaugeVec
 	Signups            *prometheus.GaugeVec
 	Users              *prometheus.GaugeVec
+	GroupMembers       *prometheus.GaugeVec
+	Groups             prometheus.Gauge
 	ExporterUp         prometheus.Gauge
 	ScrapeDuration     *prometheus.GaugeVec
 	ScrapeErrorsTotal  *prometheus.CounterVec
@@ -37,6 +39,16 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name:      "users",
 			Help:      "Total users in authentik, partitioned by verification state. state=verified means is_active=true; state=unverified means is_active=false. Sum over state for the grand total.",
 		}, []string{"state"}),
+		GroupMembers: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "group_members",
+			Help:      "Number of users belonging to each group. Note: a user can be a member of multiple groups, so summing across groups does not equal the total user count.",
+		}, []string{"group"}),
+		Groups: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "groups",
+			Help:      "Total number of groups in authentik.",
+		}),
 		ExporterUp: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: "exporter",
@@ -66,6 +78,8 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.EventCount,
 		m.Signups,
 		m.Users,
+		m.GroupMembers,
+		m.Groups,
 		m.ExporterUp,
 		m.ScrapeDuration,
 		m.ScrapeErrorsTotal,
